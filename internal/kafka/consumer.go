@@ -23,7 +23,7 @@ type Consumer struct {
 	strategy        retry.Strategy
 }
 
-func New(
+func NewConsumer(
 	cfg *config.KafkaConfig,
 	s retry.Strategy,
 	uh uploadedHandler,

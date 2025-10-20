@@ -9,29 +9,29 @@ import (
 )
 
 type Config struct {
-	LogLevel string       `yaml:"loglevel"`
-	Server   ServerConfig `yaml:"server"`
-	DB       DBConfig     `yaml:"db"`
-	MinIO    MinIOConfig  `yaml:"minio"`
-	Kafka    KafkaConfig  `yaml:"kafka"`
+	LogLevel string      `toml:"log_level"`
+	BindAddr string      `toml:"bind_addr"`
+	DB       DBConfig    `toml:"database"`
+	MinIO    MinIOConfig `toml:"minio"`
+	Kafka    KafkaConfig `toml:"kafka"`
 }
 
 type ServerConfig struct {
-	Port string `yaml:"port"`
+	Port string `toml:"port"`
 }
 
 type DBConfig struct {
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
-	User     string `yaml:"user"`
-	Password string `yaml:"password"`
-	DBName   string `yaml:"dbname"`
-	SSLMode  string `yaml:"sslmode"`
+	Host     string `toml:"host"`
+	Port     int    `toml:"port"`
+	User     string `toml:"user"`
+	Password string `toml:"password"`
+	DBName   string `toml:"dbname"`
+	SSLMode  string `toml:"sslmode"`
 
-	MaxOpenConns    int    `yaml:"max_open_conns"`
-	MaxIdleConns    int    `yaml:"max_idle_conns"`
-	ConnMaxLifetime string `yaml:"conn_max_lifetime"`
-	ConnMaxIdleTime string `yaml:"conn_max_idle_time"`
+	MaxOpenConns    int    `toml:"max_open_conns"`
+	MaxIdleConns    int    `toml:"max_idle_conns"`
+	ConnMaxLifetime string `toml:"conn_max_lifetime"`
+	ConnMaxIdleTime string `toml:"conn_max_idle_time"`
 }
 
 func (c DBConfig) DSN() string {

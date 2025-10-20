@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/aabbuukkaarr8/internal/config"
+	"github.com/aabbuukkaarr8/internal/model"
 	wbfkafka "github.com/wb-go/wbf/kafka"
 	"github.com/wb-go/wbf/retry"
 )

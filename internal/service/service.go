@@ -1,21 +1,22 @@
 package service
 
-import (
-	"github.com/aabbuukkaarr8/internal/kafka"
-	"github.com/aabbuukkaarr8/internal/repository"
-	"github.com/aabbuukkaarr8/internal/storage"
-)
-
 type Service struct {
-	repo    *repository.Repository
-	storage *storage.StorageMinio
-	kafka   *kafka.Producer
+	repo      Repository
+	minio     StorageMinio
+	producer  Producer
+	processor Machine
 }
 
-func NewImageService(r *repository.Repository, s *storage.StorageMinio, k *kafka.Producer) *Service {
+func NewService(
+	s StorageMinio,
+	p Producer,
+	proc Machine,
+	r Repository,
+) *Service {
 	return &Service{
-		repo:    r,
-		storage: s,
-		kafka:   k,
+		minio:     s,
+		producer:  p,
+		processor: proc,
+		repo:      r,
 	}
 }

@@ -1,4 +1,4 @@
-package storage
+package minio
 
 import (
 	"context"
@@ -34,17 +34,4 @@ func NewMinio(endpoint, accessKey, secretKey, bucket string) (*StorageMinio, err
 	}
 
 	return &StorageMinio{Client: client, Bucket: bucket}, nil
-}
-
-func (s *StorageMinio) Upload(ctx context.Context, objectName string, filePath string) error {
-	_, err := s.Client.FPutObject(ctx, s.Bucket, objectName, filePath, minio.PutObjectOptions{})
-	return err
-}
-
-func (s *StorageMinio) Download(ctx context.Context, objectName, destPath string) error {
-	return s.Client.FGetObject(ctx, s.Bucket, objectName, destPath, minio.GetObjectOptions{})
-}
-
-func (s *StorageMinio) Delete(ctx context.Context, objectName string) error {
-	return s.Client.RemoveObject(ctx, s.Bucket, objectName, minio.RemoveObjectOptions{})
 }

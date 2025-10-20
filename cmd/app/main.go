@@ -1,13 +1,26 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
-	"github.com/aabbuukkaarr8/internal/apiserver"
-	"github.com/aabbuukkaarr8/internal/storage"
-	"github.com/wb-go/wbf/kafka"
-
 	"github.com/BurntSushi/toml"
+	"github.com/aabbuukkaarr8/internal/apiserver"
+	"github.com/aabbuukkaarr8/internal/config"
+	"github.com/aabbuukkaarr8/internal/handler"
+	"github.com/aabbuukkaarr8/internal/kafka"
+	"github.com/aabbuukkaarr8/internal/machine"
+	"github.com/aabbuukkaarr8/internal/repository"
+	"github.com/aabbuukkaarr8/internal/service"
+	"github.com/aabbuukkaarr8/internal/storage"
+	"github.com/aabbuukkaarr8/internal/storage/minio"
+	image "github.com/aabbuukkaarr8/internal/upload"
+	"github.com/wb-go/wbf/retry"
 	"github.com/wb-go/wbf/zlog"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
 )
 
 var (
@@ -19,24 +32,61 @@ func main() {
 	flag.StringVar(&configPath, "config-path", "configs/apiserver.toml", "path to config file")
 	flag.Parse()
 	zlog.Init()
-	config := apiserver.NewConfig()
-	_, err := toml.DecodeFile(configPath, config)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	config, err := config.LoadConfig(configPath)
+	if err != nil {
+		zlog.Logger.Fatal().Err(err).Msg("failed to load config file")
+	}
+	_, err = toml.DecodeFile(configPath, config)
 	if err != nil {
 		zlog.Logger.Fatal().Err(err).Msg("config load error")
 	}
 	db := storage.New()
-	err = db.Open(config.Store.DatabaseURL)
+	err = db.Open(config.DB.DSN())
 	if err != nil {
 		zlog.Logger.Fatal().Err(err).Msg("db open error")
 		return
 	}
-	store, err := storage.NewMinio("minio:9000", "minioadmin", "minioadmin", "images")
+	strategy := retry.Strategy{
+		Attempts: 2,
+		Delay:    300 * time.Millisecond,
+		Backoff:  2.0,
+	}
+	store, err := minio.NewMinio("minio:9000", "minioadmin", "minioadmin", "images")
 	if err != nil {
 		zlog.Logger.Fatal().Err(err).Msg("minio init error")
 	}
-	// Kafka
-	prod := kafka.NewProducer("kafka:9092")
-	cons := kafka.NewConsumer("kafka:9092", "image.uploaded", svc)
-	go cons.Run(ctx)
+	//repo
+	repo := repository.NewRepository(db)
+	//kafka producer
+	prod := kafka.NewProducer(&config.Kafka, strategy)
+	//image machine
+	imgM := machine.New(store)
+	//service
+	service := service.NewService(store, prod, imgM, repo)
+
+	//handle
+	handle := image.NewdHandler(service)
+
+	//handler route
+	handler := handler.NewHandler(service)
+
+	//kafka consumer
+	c := kafka.NewConsumer(&config.Kafka, strategy, handle)
+
+	//starting kafka
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go c.Consume(ctx, &wg)
+	//HTTP
+	s := apiserver.New(config)
+	s.ConfigureRouter(handler)
+
+	//context cancel
+	<-ctx.Done()
+	zlog.Logger.Info().Msg("context done")
+
+	wg.Wait()
 
 }

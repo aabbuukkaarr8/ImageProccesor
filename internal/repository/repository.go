@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"github.com/aabbuukkaarr8/internal/storage"
 )
 
@@ -13,3 +14,4 @@ func NewRepository(store *storage.Store) *Repository {
 		store: store,
 	}
 }
+var ErrImageNotFound = errors.New("image not found")
