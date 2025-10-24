@@ -1,20 +1,46 @@
-### Image Processing Service
-This service handles image uploads, stores metadata in a PostgreSQL database, saves files in MinIO storage, and publishes events to Kafka for asynchronous processing.
-Overview
-The project consists of the following key components:
-Go HTTP Server — handles upload requests and metadata management
-PostgreSQL — stores image metadata
-MinIO — object storage for image files
-Kafka — message broker for event-driven processing
-Worker Service (optional) — consumes Kafka events and processes images (e.g., resizing, thumbnail generation)
-Features
-Upload and store images securely
-Save and retrieve metadata from PostgreSQL
-Publish Kafka messages for background processing
-Configurable retry strategy and connection pooling
-Built with scalability and reliability in mind
-Configuration
-Configuration is managed via a config.toml file.
+## Image Processing Service
+
+Микросервис для загрузки и обработки изображений:
+- REST: `POST /upload` — загрузка изображений
+- MinIO: хранение бинарных файлов
+- PostgreSQL: метаданные изображений
+- Kafka producer/consumer: асинхронная обработка событий (image.uploaded)
+- Retry/Backoff для Kafka и MinIO
+- Поддержка конфигурации через TOML (`config.toml`)
+- Docker Compose для локального запуска
+
+---
+
+### Архитектура
+- `internal/handler`: Gin-обработчики (загрузка изображений)
+- `internal/service`: бизнес-логика, сохранение в MinIO, публикация в Kafka
+- `internal/repository`: доступ к PostgreSQL
+- `internal/kafka`: producer/consumer (библиотека `wb-go/wbf`)
+- `internal/storage`: клиент MinIO
+- `internal/config`: загрузка конфигурации (TOML)
+- `pkg/retry`: стратегия повторных попыток (экспоненциальный backoff)
+- `cmd/api`: HTTP сервер
+- `cmd/worker`: Kafka consumer для фоновой обработки
+
+---
+
+### Требования
+- Go 1.23+
+- Docker + Docker Compose
+- PostgreSQL, Kafka, MinIO
+
+---
+
+### Быстрый старт
+
+1) Поднять инфраструктуру:
+```bash
+docker compose up -d db kafka kafka2 kafka3 minio
+Запуск HTTP сервера:
+go run cmd/api/main.go -config config.toml
+Запуск воркера (Kafka consumer):
+go run cmd/worker/main.go -config config.toml
+Конфигурация (config.toml)
 [server]
 http_port = ":8080"
 
@@ -42,55 +68,84 @@ use_ssl = false
 group_id = "image-workers"
 topic = "image.uploaded"
 brokers = ["kafka:9092", "kafka2:9093", "kafka3:9094"]
-Endpoints
+API
 POST /upload
-Uploads an image and stores its metadata.
-Request:
-Content-Type: multipart/form-data
-Form field: file (image file)
-Response:
+Загрузка изображения в MinIO с записью метаданных в PostgreSQL
+и публикацией события в Kafka.
+Поля запроса
+
+file: файл изображения (обязательно)
+Пример запроса
+curl -X POST http://localhost:8080/upload \
+  -F "file=@example.jpg"
+Пример ответа
 {
-"id": "uuid",
-"filename": "example.jpg",
-"url": "https://minio.local/image-bucket/example.jpg"
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "filename": "example.jpg",
+  "content_type": "image/jpeg",
+  "bucket": "image-bucket",
+  "status": "pending",
+  "url": "http://localhost:9000/image-bucket/example.jpg"
 }
-Technologies Used
-Language: Go
-Database: PostgreSQL
-Storage: MinIO
-Message Broker: Apache Kafka
-Config Format: TOML
-Project Structure
+Kafka
+Topic: image.uploaded
+Producer: отправляет событие после загрузки файла в MinIO
+Consumer: получает событие, обрабатывает изображение (например, resize, watermark и т.п.),
+обновляет статус (status = done | failed) в PostgreSQL
+Пример схемы сообщения:
+{
+  "id": "uuid",
+  "filename": "example.jpg",
+  "bucket": "image-bucket",
+  "url": "http://minio:9000/image-bucket/example.jpg",
+  "status": "pending"
+}
+Путь выполнения кода
+Handler.Upload принимает multipart/form-data
+Сервис сохраняет файл в MinIO
+Метаданные (Image) сохраняются в PostgreSQL
+Событие отправляется в Kafka
+Воркер (cmd/worker) читает из Kafka
+Обрабатывает изображение
+Обновляет статус в БД
+Структура проекта
 .
 ├── cmd/
-│   ├── api/          # HTTP server
-│   ├── worker/       # Kafka consumer
+│   ├── api/        # HTTP сервер (Gin)
+│   └── worker/     # Kafka consumer
 ├── internal/
-│   ├── handler/      # HTTP handlers
-│   ├── service/      # Business logic
-│   ├── repository/   # Database layer
-│   ├── kafka/        # Kafka producer/consumer
-│   ├── storage/      # MinIO client
-│   ├── config/       # Config loader
+│   ├── handler/    # REST API
+│   ├── service/    # Бизнес-логика
+│   ├── repository/ # PostgreSQL слой
+│   ├── storage/    # MinIO клиент
+│   ├── kafka/      # Kafka producer/consumer
+│   ├── config/     # TOML-конфиг
 ├── pkg/
-│   └── logger/       # Structured logging
+│   └── retry/      # Backoff стратегия
 ├── config.toml
 └── go.mod
-Running Locally
-Requirements
-Go 1.23+
-Docker & Docker Compose
-Kafka, MinIO, and PostgreSQL services
-Steps
-Clone the repository:
-git clone https://github.com/yourusername/image-service.git
-cd image-service
-Start dependencies:
-docker-compose up -d
-Run the service:
-go run ./cmd/api
-Future Improvements
-Add JWT-based authentication
-Implement image resizing worker
-Add metrics and tracing
-Add CI/CD pipeline
+Модель данных (internal/model/image.go)
+type Image struct {
+	ID          uuid.UUID `json:"id"`
+	Filename    string    `json:"filename"`
+	ContentType string    `json:"content_type"`
+	Bucket      string    `json:"bucket"`
+	Status      string    `json:"status"`
+	URL         string    `json:"url"`
+}
+Retry / Backoff
+Реализовано в pkg/retry
+Используется при отправке событий в Kafka и загрузке в MinIO
+Поддерживается экспоненциальная задержка с jitter
+Тестирование
+go test ./...
+Развитие
+Добавить JWT-аутентификацию
+Добавить Prometheus-метрики
+Поддержка нескольких типов обработки (resize, convert, etc.)
+Добавить OpenAPI-документацию
+Полезные ссылки
+Gin: https://github.com/gin-gonic/gin
+MinIO SDK: https://github.com/minio/minio-go
+Kafka Go client: https://github.com/segmentio/kafka-go
+TOML config: https://github.com/pelletier/go-toml
