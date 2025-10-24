@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"github.com/BurntSushi/toml"
 	"github.com/aabbuukkaarr8/internal/apiserver"
@@ -62,8 +61,7 @@ func main() {
 	//kafka producer
 	prod := kafka.NewProducer(&config.Kafka, strategy)
 	//image machine
-	imgM := machine.New(store)
-	//service
+	imgM := machine.New(store) //service
 	service := service.NewService(store, prod, imgM, repo)
 
 	//handle
@@ -82,6 +80,9 @@ func main() {
 	//HTTP
 	s := apiserver.New(config)
 	s.ConfigureRouter(handler)
+	if err = s.Run(); err != nil {
+		panic(err)
+	}
 
 	//context cancel
 	<-ctx.Done()
